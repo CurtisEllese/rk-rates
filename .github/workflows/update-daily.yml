@@ -4,6 +4,7 @@ on:
     - cron: "15 3 * * 1-5"   # будни 03:15 UTC
   workflow_dispatch: {}
 
+
 jobs:
   update:
     runs-on: ubuntu-latest

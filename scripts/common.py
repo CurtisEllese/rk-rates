@@ -23,7 +23,6 @@ def fetch_rates_html(date_obj: dt.date) -> list[dict]:
     r.raise_for_status()
     tree = html.fromstring(r.text)
     rows = tree.xpath("//table//tr")
-
     out = []
     for tr in rows:
         tds = [("".join(td.itertext())).strip() for td in tr.xpath(".//td")]

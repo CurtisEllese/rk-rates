@@ -57,5 +57,6 @@ def main():
             time.sleep(0.6)  # бережный throttle
     print("backfill rows:", total)
 
+
 if __name__ == "__main__":
     main()
