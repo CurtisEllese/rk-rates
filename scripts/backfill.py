@@ -1,65 +1,62 @@
-import os, sys, time, json, csv, datetime as dt
-from common import fetch_rates_html, prev_business_day
+import os, sys, time, csv, datetime as dt
+from common import fetch_rates_html, prev_business_day, ymd
 
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-DAILY_DIR = os.path.join(DATA_DIR, "daily")
-os.makedirs(DAILY_DIR, exist_ok=True)
+BASE = os.path.dirname(os.path.dirname(__file__))
+DATA = os.path.join(BASE, "data")
+os.makedirs(DATA, exist_ok=True)
 
-def upsert_year_csv(year: int, items: list[dict]) -> None:
-    path = os.path.join(DATA_DIR, f"{year}.csv")
-    existing = {}
+def upsert(year: int, items: list[dict]) -> int:
+    path = os.path.join(DATA, f"{year}.csv")
+    store = {}
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
-            rd = csv.DictReader(f)
-            for row in rd:
-                existing[(row["date"], row["currency"].upper())] = float(row["rate"])
+            for r in csv.DictReader(f):
+                store[(r["date"], (r["currency"] or "").upper())] = float(r["rate"])
     for it in items:
-        key = (it["date"][:10], it["currency"].upper())
-        existing[key] = float(it["rate"])
+        d = str(it["date"] )[:10]
+        c = (it["currency"] or "").upper()
+        r = float(it["rate"])
+        store[(d, c)] = r
     with open(path, "w", encoding="utf-8", newline="") as f:
-        wr = csv.writer(f)
-        wr.writerow(["date","currency","rate"])
-        for (d, c), r in sorted(existing.items()):
-            wr.writerow([d, c, f"{r:.4f}"])
+        w = csv.writer(f); w.writerow(["date","currency","rate"])
+        for (d, c), r in sorted(store.items()):
+            w.writerow([d, c, f"{r:.4f}"])
+    return len(items)
 
 def daterange(a: dt.date, b: dt.date):
-    if b < a:
-        a, b = b, a
+    if b < a: a, b = b, a
     d = a
     while d <= b:
         yield d
         d += dt.timedelta(days=1)
 
 def main():
-    # Аргументы: YYYY-MM-DD YYYY-MM-DD (включительно)
     if len(sys.argv) < 3:
-        print("Usage: python scripts/backfill.py 2022-01-01 2024-12-31")
+        print("Usage: python scripts/backfill.py 2024-01-01 2024-12-31 [USD,EUR,RUB]")
         sys.exit(1)
     a = dt.datetime.strptime(sys.argv[1], "%Y-%m-%d").date()
     b = dt.datetime.strptime(sys.argv[2], "%Y-%m-%d").date()
-
+    pick = set()
+    if len(sys.argv) >= 4:
+        pick = {x.strip().upper() for x in sys.argv[3].split(",") if x.strip()}
     total = 0
     for d in daterange(a, b):
-        if d.weekday() >= 5:  # пропускаем выходные
+        if d.weekday() >= 5:   # пропускаем выходные, там официальных значений нет
             continue
         items = fetch_rates_html(d)
         if not items:
-            # если праздники/нет страницы — попробуем предыдущий рабочий
+            # на случай праздника — возьмём ближайший рабочий назад
             items = fetch_rates_html(prev_business_day(d))
-        if not items:
-            print("skip", d)
-            continue
-        # daily
-        os.makedirs(DAILY_DIR, exist_ok=True)
-        with open(os.path.join(DAILY_DIR, f"{d.strftime('%Y-%m-%d')}.json"), "w", encoding="utf-8") as f:
-            json.dump(items, f, ensure_ascii=False, indent=2)
-        # year
-        upsert_year_csv(d.year, items)
-        total += len(items)
-        # аккуратный throttling, чтобы не долбить сайт
-        time.sleep(0.7)
-    print("Backfill done, rows:", total)
+            for it in items:
+                it["date"] = ymd(d)  # фиксируем курс на отчётную дату
+        if pick:
+            items = [it for it in items if it["currency"] in pick]
+        if items:
+            upsert(d.year, items)
+            total += len(items)
+            time.sleep(0.6)  # бережный throttle
+    print("backfill rows:", total)
+
 
 if __name__ == "__main__":
     main()
