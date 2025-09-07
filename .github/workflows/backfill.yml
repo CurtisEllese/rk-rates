@@ -1,5 +1,9 @@
 name: Backfill rates (seed 2024)
 
+permissions:
+  contents: write
+  pull-requests: write
+
 on:
   workflow_dispatch:
     inputs:
@@ -32,8 +36,111 @@ jobs:
           echo "lxml==5.3.0" >> requirements.txt
           pip install -r requirements.txt
 
-      # создаём вспомогательные скрипты прямо в раннере
       - name: Write helper scripts
+        run: |
+          mkdir -p scripts data
+          cat > scripts/common.py << 'PY'
+          import datetime as dt, re
+          from lxml import html; import requests
+          HEADERS={"User-Agent":"rk-rates-bot/1.0","Accept":"text/html,application/xhtml+xml"}
+          BASE="https://nationalbank.kz/ru/exchangerates/ezhednevnye-oficialnye-rynochnye-kursy-valyut"
+          def ymd(d:dt.date): return d.strftime("%Y-%m-%d")
+          def prev_bd(d:dt.date):
+              while d.weekday()>=5: d-=dt.timedelta(days=1)
+              return d
+          def fetch(d:dt.date):
+              url=f"{BASE}?date={d.strftime('%d.%m.%Y')}"
+              r=requests.get(url,headers=HEADERS,timeout=15); r.raise_for_status()
+              rows=html.fromstring(r.text).xpath("//table//tr")
+              out=[]
+              for tr in rows:
+                  tds=["".join(td.itertext()).strip() for td in tr.xpath(".//td")]
+                  if len(tds)<2: continue
+                  code=None
+                  for cell in tds[:3]:
+                      token=re.sub(r"[^A-Za-z]","",cell or "").upper()
+                      if 2<=len(token)<=5: code=token; break
+                  if not code: continue
+                  rate=None
+                  for cell in reversed(tds):
+                      s=(cell or "").replace("\u00A0"," ").replace(" ","").replace(",",".")
+                      try: rate=float(s); break
+                      except: pass
+                  if rate is None: continue
+                  out.append({"date": ymd(d), "currency": code, "rate": round(rate,4)})
+              uniq={}
+              for it in out: uniq[(it["date"],it["currency"])]=it["rate"]
+              return [{"date":d,"currency":c,"rate":r} for (d,c),r in sorted(uniq.items())]
+          PY
+
+          cat > scripts/backfill.py << 'PY'
+          import os, sys, time, csv, datetime as dt
+          from common import fetch, prev_bd
+          BASE=os.path.dirname(os.path.dirname(__file__)); DATA=os.path.join(BASE,"data")
+          os.makedirs(DATA,exist_ok=True)
+          def upsert(year:int, items:list[dict]):
+              path=os.path.join(DATA,f"{year}.csv"); store={}
+              if os.path.exists(path):
+                  with open(path,"r",encoding="utf-8") as f:
+                      for r in csv.DictReader(f):
+                          store[(r["date"],(r["currency"] or "").upper())]=float(r["rate"])
+              for it in items:
+                  store[(str(it["date"])[:10],(it["currency"] or "").upper())]=float(it["rate"])
+              with open(path,"w",encoding="utf-8",newline="") as f:
+                  w=csv.writer(f); w.writerow(["date","currency","rate"])
+                  for (d,c),r in sorted(store.items()):
+                      w.writerow([d,c,f"{r:.4f}"])
+          def dates(a:dt.date,b:dt.date):
+              if b<a: a,b=b,a
+              d=a
+              while d<=b:
+                  yield d; d+=dt.timedelta(days=1)
+          a=dt.datetime.strptime(sys.argv[1],"%Y-%m-%d").date()
+          b=dt.datetime.strptime(sys.argv[2],"%Y-%m-%d").date()
+          pick=set()
+          if len(sys.argv)>=4 and sys.argv[3].strip():
+              pick={x.strip().upper() for x in sys.argv[3].split(",") if x.strip()}
+          total=0
+          for d in dates(a,b):
+              if d.weekday()>=5: continue
+              items=fetch(d)
+              if not items:
+                  items=fetch(prev_bd(d))
+                  for it in items: it["date"]=d.strftime("%Y-%m-%d")
+              if pick: items=[it for it in items if it["currency"] in pick]
+              if items:
+                  upsert(d.year,items); total+=len(items); time.sleep(0.6)
+          print("rows:",total)
+          PY
+
+      - name: Run backfill
+        id: runbf
+        run: python scripts/backfill.py "${{ inputs.start }}" "${{ inputs.end }}" "${{ inputs.currencies }}"
+
+      - name: Show head of 2024.csv
+        run: |
+          if [ -f data/2024.csv ]; then
+            echo "=== data/2024.csv (head) ==="
+            head -n 25 data/2024.csv
+            echo "============================"
+          else
+            echo "data/2024.csv not found"
+          fi
+
+      - name: Upload artifact (CSV)
+        uses: actions/upload-artifact@v4
+        with:
+          name: data-2024-preview
+          path: data/2024.csv
+          if-no-files-found: warn
+
+      - name: Create PR with changes
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: bot/backfill-${{ github.run_id }}
+          title: "Backfill rates: ${{ inputs.start }}..${{ inputs.end }}"
+          commit-message: "chore: backfill ${{ inputs.start }}..${{ inputs.end }}"
+          author: rates-bot <rates-bot@users.noreply.github.com>
         run: |
           mkdir -p scripts data
           cat > scripts/common.py << 'PY'
