@@ -1,0 +1,22 @@
+name: Update daily rates
+on:
+  schedule:
+    - cron: "15 3 * * 1-5"   # будни 03:15 UTC
+  workflow_dispatch: {}
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
+      - run: python scripts/update_daily.py
+      - run: |
+          git config user.name "rates-bot"
+          git config user.email "rates-bot@users.noreply.github.com"
+          git add -A
+          git commit -m "chore: update daily rates" || echo "No changes"
+          git push
