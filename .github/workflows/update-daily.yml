@@ -8,18 +8,20 @@ permissions:
 on:
   schedule:
     - cron: "15 3 * * 1-5"
-
   workflow_dispatch: {}
 
 concurrency:
   group: rates-${{ github.workflow }}
   cancel-in-progress: true
 
-
 jobs:
   update:
     runs-on: ubuntu-latest
+    env:
+      HAS_PAT: ${{ secrets.AUTO_TOKEN }}
     steps:
+      - name: Reminder: workflow permissions
+        run: echo "::notice title=Reminder::Enable 'Actions → Workflow permissions → Read and write' in repo settings."
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
 
@@ -118,14 +120,16 @@ jobs:
           delete-branch: false
           labels: rates, auto-merge
 
-      - name: Auto approve PR (optional)
-        if: ${{ steps.cpr.outputs.pull-request-number }}
+      - name: Auto approve PR (only if AUTO_TOKEN set)
+        if: ${{ steps.cpr.outputs.pull-request-number && env.HAS_PAT != '' }}
         uses: hmarr/auto-approve-action@v4
         with:
           pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
-          github-token: ${{ secrets.AUTO_TOKEN || secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.AUTO_TOKEN }}
 
-
+      - name: Skip auto-approve (no AUTO_TOKEN)
+        if: ${{ steps.cpr.outputs.pull-request-number && env.HAS_PAT == '' }}
+        run: echo "::notice title=Auto-approve skipped::Set repo secret AUTO_TOKEN to enable auto-approve."
       - name: Enable auto-merge
         if: ${{ steps.cpr.outputs.pull-request-number }}
         uses: peter-evans/enable-pull-request-automerge@v3
