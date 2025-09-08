@@ -1,0 +1,17 @@
+[
+  {
+    "date": "2023-10-05",
+    "currency": "EUR",
+    "rate": 500.23
+  },
+  {
+    "date": "2023-10-05",
+    "currency": "RUB",
+    "rate": 4.79
+  },
+  {
+    "date": "2023-10-05",
+    "currency": "USD",
+    "rate": 476.59
+  }
+]

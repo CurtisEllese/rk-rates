@@ -1,0 +1,17 @@
+[
+  {
+    "date": "2023-11-01",
+    "currency": "EUR",
+    "rate": 501.09
+  },
+  {
+    "date": "2023-11-01",
+    "currency": "RUB",
+    "rate": 5.11
+  },
+  {
+    "date": "2023-11-01",
+    "currency": "USD",
+    "rate": 469.67
+  }
+]
