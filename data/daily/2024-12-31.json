@@ -1,0 +1,17 @@
+[
+  {
+    "date": "2024-12-31",
+    "currency": "EUR",
+    "rate": 546.47
+  },
+  {
+    "date": "2024-12-31",
+    "currency": "RUB",
+    "rate": 4.99
+  },
+  {
+    "date": "2024-12-31",
+    "currency": "USD",
+    "rate": 523.54
+  }
+]

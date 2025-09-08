@@ -1,0 +1,17 @@
+[
+  {
+    "date": "2024-01-01",
+    "currency": "EUR",
+    "rate": 502.24
+  },
+  {
+    "date": "2024-01-01",
+    "currency": "RUB",
+    "rate": 5.06
+  },
+  {
+    "date": "2024-01-01",
+    "currency": "USD",
+    "rate": 454.56
+  }
+]
