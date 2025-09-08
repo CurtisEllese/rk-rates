@@ -7,7 +7,8 @@ permissions:
 
 on:
   schedule:
-    - cron: "15 3 * * 1-5"   # будни, 03:15 UTC
+    - cron: "15 3 * * 1-5"
+
   workflow_dispatch: {}
 
 concurrency:
@@ -19,10 +20,6 @@ jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - name: Check workflow permissions
-        run: |
-          echo "::notice title=Reminder::Ensure 'Actions → Workflow permissions' is set to 'Read and write'."
-
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
 
@@ -35,23 +32,19 @@ jobs:
           pip install -r requirements.txt
 
       - name: Fetch & update last business day (RSS NBK)
-        id: fetch
         run: |
           python - << 'PY'
-          import os, csv, json, re, datetime as dt, xml.etree.ElementTree as ET
-          import requests, pathlib
-          UA = {"User-Agent":"rk-rates-bot/1.0","Accept":"application/xml","Accept-Language":"ru,en;q=0.9"}
-          BASE = "https://nationalbank.kz/rss/get_rates.cfm?fdate={}"
+          import os, csv, re, xml.etree.ElementTree as ET, datetime as dt, json, requests, pathlib
+          UA={"User-Agent":"rk-rates-bot/1.0","Accept":"application/xml"}
+          BASE="https://nationalbank.kz/rss/get_rates.cfm?fdate={}"
           def ddmmyyyy(d): return d.strftime("%d.%m.%Y")
           def ymd(d): return d.strftime("%Y-%m-%d")
           def prev_bd(d):
-            while d.weekday()>=5: d -= dt.timedelta(days=1)
+            while d.weekday()>=5: d-=dt.timedelta(days=1)
             return d
           def fetch_day(d):
-            url = BASE.format(ddmmyyyy(d))
-            r = requests.get(url, headers=UA, timeout=20); r.raise_for_status()
-            root = ET.fromstring(r.content)
-            out=[]
+            r=requests.get(BASE.format(ddmmyyyy(d)),headers=UA,timeout=20); r.raise_for_status()
+            root=ET.fromstring(r.content); out=[]
             for item in root.findall(".//item"):
               code=None
               for tag in ("index","title","charcode","code"):
@@ -74,17 +67,17 @@ jobs:
                 if m: rate=float(m.group())
               if rate is None: continue
               out.append({"date": ymd(d), "currency": code, "rate": round(rate,4)})
-            seen={}
-            for it in out: seen[(it["date"],it["currency"])]=it["rate"]
-            return [{"date":d,"currency":c,"rate":r} for (d,c),r in sorted(seen.items())]
+            uniq={}
+            for it in out: uniq[(it["date"],it["currency"])]=it["rate"]
+            return [{"date":d,"currency":c,"rate":r} for (d,c),r in sorted(uniq.items())]
           today=dt.date.today()
           d=prev_bd(today)
           items=fetch_day(d)
           if not items:
             alt=prev_bd(d-dt.timedelta(days=1))
             items=[{"date": ymd(d), "currency": it["currency"], "rate": it["rate"]} for it in fetch_day(alt)]
-          os.makedirs("data/daily", exist_ok=True)
-          # update year CSV
+          os.makedirs("data/daily",exist_ok=True)
+          # upsert year csv
           path=f"data/{d.year}.csv"; store={}
           if os.path.exists(path):
             with open(path,"r",encoding="utf-8") as f:
@@ -96,7 +89,6 @@ jobs:
             w=csv.writer(f); w.writerow(["date","currency","rate"])
             for (dd,cc),rr in sorted(store.items()):
               w.writerow([dd,cc,f"{rr:.4f}"])
-          # daily JSON snapshot
           with open(f"data/daily/{ymd(d)}.json","w",encoding="utf-8") as f:
             json.dump(items,f,ensure_ascii=False,indent=2)
           print("updated:", ymd(d), "rows:", len(items))
@@ -125,14 +117,14 @@ jobs:
           signoff: false
           delete-branch: false
           labels: rates, auto-merge
-          # token: ${{ secrets.AUTO_TOKEN }}   # раскомментируй, если используешь PAT
 
-      - name: Auto approve (optional, if branch protection requires)
-        if: ${{ steps.cpr.outputs.pull-request-number && secrets.AUTO_TOKEN }}
+      - name: Auto approve PR (optional)
+        if: ${{ steps.cpr.outputs.pull-request-number }}
         uses: hmarr/auto-approve-action@v4
         with:
           pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
-          github-token: ${{ secrets.AUTO_TOKEN }}
+          github-token: ${{ secrets.AUTO_TOKEN || secrets.GITHUB_TOKEN }}
+
 
       - name: Enable auto-merge
         if: ${{ steps.cpr.outputs.pull-request-number }}
@@ -140,4 +132,5 @@ jobs:
         with:
           pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
           merge-method: squash
-          # token: ${{ secrets.AUTO_TOKEN }}   # при строгой защите ветки понадобится PAT
+          token: ${{ secrets.AUTO_TOKEN || secrets.GITHUB_TOKEN }}
+
