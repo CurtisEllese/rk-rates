@@ -1,23 +1,143 @@
-name: Update daily rates
+name: Update daily rates (RSS)
+
+permissions:
+  contents: write
+  pull-requests: write
+
 on:
   schedule:
-    - cron: "15 3 * * 1-5"   # будни 03:15 UTC
-  workflow_dispatch: {}
-
+    - cron: "15 3 * * 1-5"   # по будням 03:15 UTC
+  workflow_dispatch: {}       # можно запустить вручную
 
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
-      - run: pip install -r requirements.txt
-      - run: python scripts/update_daily.py
-      - run: |
-          git config user.name "rates-bot"
-          git config user.email "rates-bot@users.noreply.github.com"
-          git add -A
-          git commit -m "chore: update daily rates" || echo "No changes"
-          git push
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install deps
+        run: |
+          echo "requests==2.32.3" > requirements.txt
+          pip install -r requirements.txt
+
+      - name: Fetch & update (prev business day)
+        id: fetch
+        run: |
+          python - << 'PY'
+          import os, csv, json, re, datetime as dt, time, xml.etree.ElementTree as ET
+          import requests, pathlib
+
+          UA = {"User-Agent":"rk-rates-bot/1.0","Accept":"application/xml","Accept-Language":"ru,en;q=0.9"}
+          BASE = "https://nationalbank.kz/rss/get_rates.cfm?fdate={}"
+
+          def ddmmyyyy(d): return d.strftime("%d.%m.%Y")
+          def ymd(d): return d.strftime("%Y-%m-%d")
+          def prev_bd(d):
+            while d.weekday()>=5: d -= dt.timedelta(days=1)
+            return d
+
+          def fetch_day(d: dt.date):
+            url = BASE.format(ddmmyyyy(d))
+            r = requests.get(url, headers=UA, timeout=20)
+            r.raise_for_status()
+            root = ET.fromstring(r.content)
+            out = []
+            for item in root.findall(".//item"):
+              # ISO-код
+              code = None
+              for tag in ("index","title","charcode","code"):
+                el = item.find(tag)
+                if el is not None and (el.text or "").strip():
+                  t = re.sub(r"[^A-Za-z]", "", el.text).upper()
+                  if re.fullmatch(r"[A-Z]{3}", t):
+                    code = t; break
+              if not code:
+                # резервный поиск
+                all_text = " ".join([(item.find(t).text or "") for t in ("title","fullname","description") if item.find(t) is not None])
+                m = re.search(r"\b([A-Za-z]{3})\b", all_text or "")
+                if m: code = m.group(1).upper()
+              if not code or code == "KZT":
+                continue
+              # Курс
+              rate = None
+              for tag in ("description","value","target","current"):
+                el = item.find(tag)
+                if el is not None and (el.text or "").strip():
+                  s = el.text.replace("\xa0"," ").replace(" ","").replace(",",".")
+                  m = re.search(r"[-+]?\d+(?:\.\d+)?", s)
+                  if m:
+                    rate = float(m.group()); break
+              if rate is None:
+                s = " ".join([(item.find(t).text or "") for t in ("description","title","fullname") if item.find(t) is not None])
+                s = s.replace("\xa0"," ").replace(" ","").replace(",",".")
+                m = re.search(r"[-+]?\d+(?:\.\d+)?", s)
+                if m: rate = float(m.group())
+              if rate is None: 
+                continue
+              out.append({"date": ymd(d), "currency": code, "rate": round(rate,4)})
+            # дедуп
+            seen={}
+            for it in out: seen[(it["date"],it["currency"])] = it["rate"]
+            return [{"date":d,"currency":c,"rate":r} for (d,c),r in sorted(seen.items())]
+
+          # выбираем дату: последний рабочий день (для запуска по расписанию) или сегодня->пред.раб. день
+          today = dt.date.today()
+          d = prev_bd(today)
+
+          items = fetch_day(d)
+          if not items:
+            # редкий случай праздников — берём предыдущий рабочий и помечаем текущей датой
+            alt = prev_bd(d - dt.timedelta(days=1))
+            alt_items = fetch_day(alt)
+            items = [{"date": ymd(d), "currency": it["currency"], "rate": it["rate"]} for it in alt_items]
+
+          os.makedirs("data/daily", exist_ok=True)
+          # обновляем годовой CSV
+          path = f"data/{d.year}.csv"
+          store = {}
+          if os.path.exists(path):
+            with open(path,"r",encoding="utf-8") as f:
+              for r in csv.DictReader(f):
+                store[(r["date"], (r["currency"] or "").upper())] = float(r["rate"])
+          for it in items:
+            store[(str(it["date"])[:10], (it["currency"] or "").upper())] = float(it["rate"])
+          with open(path,"w",encoding="utf-8",newline="") as f:
+            w=csv.writer(f); w.writerow(["date","currency","rate"])
+            for (dd,cc),rr in sorted(store.items()):
+              w.writerow([dd,cc,f"{rr:.4f}"])
+          # daily JSON
+          with open(f"data/daily/{ymd(d)}.json","w",encoding="utf-8") as f:
+            json.dump(items,f,ensure_ascii=False,indent=2)
+
+          # напечатаем head для логов
+          print("updated:", ymd(d), "rows:", len(items))
+          if pathlib.Path(path).exists():
+            with open(path, "r", encoding="utf-8") as f:
+              for i, line in zip(range(25), f):
+                print(line.rstrip())
+          PY
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-update-preview
+          path: |
+            data/*.csv
+            data/daily/*.json
+          if-no-files-found: warn
+
+      - name: Create PR with changes
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: bot/daily-${{ github.run_id }}
+          title: "Update daily rates (RSS)"
+          commit-message: "chore: update daily rates (RSS)"
+          author: rates-bot <rates-bot@users.noreply.github.com>
