@@ -1,0 +1,73 @@
+name: Backfill rates
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "Start date (YYYY-MM-DD)"
+        required: true
+        default: "2024-01-01"
+      end:
+        description: "End date (YYYY-MM-DD)"
+        required: true
+        default: "2024-12-31"
+      currencies:
+        description: "Comma-separated list of ISO (blank = all)"
+        required: false
+        default: "USD,EUR,RUB"
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check workflow permissions
+        run: |
+          echo "::notice title=Reminder::Ensure 'Actions → Workflow permissions' is set to 'Read and write'."
+
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+
+      - run: pip install -r requirements.txt
+
+      - name: Run backfill
+        run: python scripts/backfill.py "${{ inputs.start }}" "${{ inputs.end }}" "${{ inputs.currencies }}"
+
+      - name: Show head of 2024.csv
+        run: |
+          if [ -f data/2024.csv ]; then head -n 20 data/2024.csv; else echo "no data/2024.csv"; fi
+
+      - name: Create/Update PR (static branch bot/rates)
+        id: cpr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: bot/rates
+          title: "chore: backfill rates"
+          commit-message: "chore: backfill rates [skip ci]"
+          author: rates-bot <rates-bot@users.noreply.github.com>
+          signoff: false
+          delete-branch: false
+          labels: rates, auto-merge
+          # token: ${{ secrets.AUTO_TOKEN }}
+
+      - name: Auto approve (optional)
+        if: ${{ steps.cpr.outputs.pull-request-number && secrets.AUTO_TOKEN }}
+        uses: hmarr/auto-approve-action@v4
+        with:
+          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+          github-token: ${{ secrets.AUTO_TOKEN }}
+
+      - name: Enable auto-merge
+        if: ${{ steps.cpr.outputs.pull-request-number }}
+        uses: peter-evans/enable-pull-request-automerge@v3
+        with:
+          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+          merge-method: squash
+          # token: ${{ secrets.AUTO_TOKEN }}
+
