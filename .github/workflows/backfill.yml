@@ -17,6 +17,7 @@ on:
         default: "2024-12-31"
       currencies:
         description: "Comma-separated list of ISO (blank = all)"
+
         required: false
         default: "USD,EUR,RUB"
 
@@ -70,4 +71,5 @@ jobs:
           pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
           merge-method: squash
           # token: ${{ secrets.AUTO_TOKEN }}
+
 
