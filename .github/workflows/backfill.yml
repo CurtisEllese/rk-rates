@@ -157,3 +157,4 @@ jobs:
           pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
           merge-method: squash
           token: ${{ secrets.AUTO_TOKEN || secrets.GITHUB_TOKEN }}
+

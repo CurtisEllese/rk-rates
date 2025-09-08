@@ -1,5 +1,6 @@
 name: Update daily rates (RSS -> PR -> auto-merge)
 
+
 permissions:
   contents: write
   pull-requests: write
@@ -129,7 +130,6 @@ jobs:
       - name: Skip auto-approve (no AUTO_TOKEN)
         if: ${{ steps.cpr.outputs.pull-request-number && env.HAS_PAT == '' }}
         run: echo "::notice title=Auto-approve skipped::Set repo secret AUTO_TOKEN to enable auto-approve."
-
       - name: Enable auto-merge
         if: ${{ steps.cpr.outputs.pull-request-number }}
         uses: peter-evans/enable-pull-request-automerge@v3
@@ -137,3 +137,4 @@ jobs:
           pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
           merge-method: squash
           token: ${{ secrets.AUTO_TOKEN || secrets.GITHUB_TOKEN }}
+
