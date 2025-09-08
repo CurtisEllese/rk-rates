@@ -1,4 +1,4 @@
-name: Backfill rates (seed 2024 via NBK RSS)
+name: Backfill rates
 
 permissions:
   contents: write
@@ -16,7 +16,8 @@ on:
         required: true
         default: "2024-12-31"
       currencies:
-        description: "Comma-separated ISO (blank = all)"
+        description: "Comma-separated list of ISO (blank = all)"
+
         required: false
         default: "USD,EUR,RUB"
 
@@ -24,171 +25,51 @@ jobs:
   backfill:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install deps
+      - name: Check workflow permissions
         run: |
-          echo "requests==2.32.3" > requirements.txt
-          pip install -r requirements.txt
+          echo "::notice title=Reminder::Ensure 'Actions → Workflow permissions' is set to 'Read and write'."
 
-      - name: Write helper (RSS parser)
-        run: |
-          mkdir -p scripts data
-          cat > scripts/fetch_rss.py << 'PY'
-          import datetime as dt, time, os, sys, csv, re, xml.etree.ElementTree as ET
-          import requests
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
 
-          UA = {"User-Agent":"rk-rates-bot/1.0","Accept":"application/xml","Accept-Language":"ru,en;q=0.9"}
-          BASE = "https://nationalbank.kz/rss/get_rates.cfm?fdate={}"
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
 
-          def ddmmyyyy(d: dt.date) -> str:
-              return d.strftime("%d.%m.%Y")
+      - run: pip install -r requirements.txt
 
-          def ymd(d: dt.date) -> str:
-              return d.strftime("%Y-%m-%d")
-
-          def prev_bd(d: dt.date) -> dt.date:
-              while d.weekday() >= 5:
-                  d -= dt.timedelta(days=1)
-              return d
-
-          def fetch_day(d: dt.date):
-              """Возвращает список dict: {'date','currency','rate'} из RSS на дату d."""
-              url = BASE.format(ddmmyyyy(d))
-              r = requests.get(url, headers=UA, timeout=20)
-              r.raise_for_status()
-              # NBK RSS — это <rates><item>...</item>...</rates>
-              root = ET.fromstring(r.content)
-              out = []
-              for item in root.findall(".//item"):
-                  # пытаемся взять код валюты
-                  # часто встречаются: <title>USD</title> <index>USD</index> <fullname>...</fullname>
-                  code_texts = []
-                  for tag in ("index","title","charcode","code"):
-                      el = item.find(tag)
-                      if el is not None and (el.text or "").strip():
-                          code_texts.append(el.text.strip())
-                  code = None
-                  for t in code_texts:
-                      t = re.sub(r"[^A-Za-z]", "", t or "").upper()
-                      if re.fullmatch(r"[A-Z]{3}", t):
-                          code = t
-                          break
-                  if not code:
-                      # иногда код может быть в title вроде "1 USD"
-                      all_text = " ".join([(item.find(t).text or "") for t in ("title","fullname","description") if item.find(t) is not None])
-                      m = re.search(r"\b([A-Za-z]{3})\b", all_text or "")
-                      if m: code = m.group(1).upper()
-                  if not code or code == "KZT":
-                      continue
-
-                  # парсим курс — часто в <description>, иногда в <value>
-                  rate = None
-                  for tag in ("description","value","target","current"):
-                      el = item.find(tag)
-                      if el is not None and (el.text or "").strip():
-                          s = el.text.replace("\xa0"," ").replace(" ","").replace(",",".")
-                          try:
-                              rate = float(re.search(r"[-+]?\d+(?:\.\d+)?", s).group())
-                              break
-                          except Exception:
-                              pass
-                  if rate is None:
-                      # fallback: ищем первое число в конкатенации полей
-                      s = " ".join([(item.find(t).text or "") for t in ("description","title","fullname") if item.find(t) is not None])
-                      s = s.replace("\xa0"," ").replace(" ","").replace(",",".")
-                      m = re.search(r"[-+]?\d+(?:\.\d+)?", s)
-                      if m:
-                          rate = float(m.group())
-
-                  if rate is None:
-                      continue
-
-                  out.append({"date": ymd(d), "currency": code, "rate": round(rate,4)})
-              # дедуп по (date,currency)
-              seen = {}
-              for it in out:
-                  seen[(it["date"], it["currency"])] = it["rate"]
-              return [{"date": d, "currency": c, "rate": r} for (d,c),r in sorted(seen.items())]
-
-          def upsert_csv(year: int, items: list[dict]):
-              path = os.path.join("data", f"{year}.csv")
-              store = {}
-              if os.path.exists(path):
-                  with open(path, "r", encoding="utf-8") as f:
-                      for r in csv.DictReader(f):
-                          store[(r["date"], (r["currency"] or "").upper())] = float(r["rate"])
-              for it in items:
-                  d = str(it["date"])[:10]; c = (it["currency"] or "").upper(); v = float(it["rate"])
-                  store[(d,c)] = v
-              os.makedirs("data", exist_ok=True)
-              with open(path, "w", encoding="utf-8", newline="") as f:
-                  w = csv.writer(f); w.writerow(["date","currency","rate"])
-                  for (d,c),v in sorted(store.items()):
-                      w.writerow([d,c,f"{v:.4f}"])
-
-          if __name__ == "__main__":
-              import sys
-              a = dt.datetime.strptime(sys.argv[1], "%Y-%m-%d").date()
-              b = dt.datetime.strptime(sys.argv[2], "%Y-%m-%d").date()
-              pick = set()
-              if len(sys.argv) >= 3 and len(sys.argv) == 4 and sys.argv[3].strip():
-                  pick = {x.strip().upper() for x in sys.argv[3].split(",") if x.strip()}
-              if b < a: a, b = b, a
-
-              total = 0
-              cur = a
-              while cur <= b:
-                  if cur.weekday() < 5:
-                      items = fetch_day(cur)
-                      # если пусто (праздник), возьмём предыдущий рабочий и отметим текущей датой
-                      if not items:
-                          alt = prev_bd(cur - dt.timedelta(days=1))
-                          alt_items = fetch_day(alt)
-                          items = [{"date": (cur.strftime("%Y-%m-%d")), "currency": it["currency"], "rate": it["rate"]} for it in alt_items]
-                      if pick:
-                          items = [it for it in items if it["currency"] in pick]
-                      if items:
-                          upsert_csv(cur.year, items)
-                          total += len(items)
-                      time.sleep(0.4)  # мягкий throttle
-                  cur += dt.timedelta(days=1)
-              print(f"rows: {total}")
-          PY
-
-      - name: Run backfill (RSS)
-        id: runbf
-        run: python scripts/fetch_rss.py "${{ inputs.start }}" "${{ inputs.end }}" "${{ inputs.currencies }}"
+      - name: Run backfill
+        run: python scripts/backfill.py "${{ inputs.start }}" "${{ inputs.end }}" "${{ inputs.currencies }}"
 
       - name: Show head of 2024.csv
         run: |
-          if [ -f data/2024.csv ]; then
-            echo "=== data/2024.csv (head) ==="
-            head -n 25 data/2024.csv
-            echo "============================"
-          else
-            echo "data/2024.csv not found"
-          fi
+          if [ -f data/2024.csv ]; then head -n 20 data/2024.csv; else echo "no data/2024.csv"; fi
 
-      - name: Upload artifact (CSV)
-        uses: actions/upload-artifact@v4
-        with:
-          name: data-2024-preview
-          path: data/2024.csv
-          if-no-files-found: warn
-
-      - name: Create PR with changes
+      - name: Create/Update PR (static branch bot/rates)
+        id: cpr
         uses: peter-evans/create-pull-request@v6
         with:
-          branch: bot/backfill-${{ github.run_id }}
-          title: "Backfill rates (RSS): ${{ inputs.start }}..${{ inputs.end }}"
-          commit-message: "chore: backfill (RSS) ${{ inputs.start }}..${{ inputs.end }}"
+          branch: bot/rates
+          title: "chore: backfill rates"
+          commit-message: "chore: backfill rates [skip ci]"
           author: rates-bot <rates-bot@users.noreply.github.com>
+          signoff: false
+          delete-branch: false
+          labels: rates, auto-merge
+          # token: ${{ secrets.AUTO_TOKEN }}
+
+      - name: Auto approve (optional)
+        if: ${{ steps.cpr.outputs.pull-request-number && secrets.AUTO_TOKEN }}
+        uses: hmarr/auto-approve-action@v4
+        with:
+          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+          github-token: ${{ secrets.AUTO_TOKEN }}
+
+      - name: Enable auto-merge
+        if: ${{ steps.cpr.outputs.pull-request-number }}
+        uses: peter-evans/enable-pull-request-automerge@v3
+        with:
+          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+          merge-method: squash
+          # token: ${{ secrets.AUTO_TOKEN }}
+
+
