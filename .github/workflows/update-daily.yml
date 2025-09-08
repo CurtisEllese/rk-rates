@@ -1,6 +1,5 @@
 name: Update daily rates (RSS -> PR -> auto-merge)
 
-
 permissions:
   contents: write
   pull-requests: write
@@ -20,13 +19,15 @@ jobs:
     env:
       HAS_PAT: ${{ secrets.AUTO_TOKEN }}
     steps:
-      - name: Reminder: workflow permissions
-        run: echo "::notice title=Reminder::Enable 'Actions → Workflow permissions → Read and write' in repo settings."
-      - uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.11" }
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
       - name: Install deps
         run: |
@@ -79,7 +80,6 @@ jobs:
             alt=prev_bd(d-dt.timedelta(days=1))
             items=[{"date": ymd(d), "currency": it["currency"], "rate": it["rate"]} for it in fetch_day(alt)]
           os.makedirs("data/daily",exist_ok=True)
-          # upsert year csv
           path=f"data/{d.year}.csv"; store={}
           if os.path.exists(path):
             with open(path,"r",encoding="utf-8") as f:
@@ -91,9 +91,9 @@ jobs:
             w=csv.writer(f); w.writerow(["date","currency","rate"])
             for (dd,cc),rr in sorted(store.items()):
               w.writerow([dd,cc,f"{rr:.4f}"])
-          with open(f"data/daily/{ymd(d)}.json","w",encoding="utf-8") as f:
+          with open(f"data/daily/{d.strftime('%Y-%m-%d')}.json","w",encoding="utf-8") as f:
             json.dump(items,f,ensure_ascii=False,indent=2)
-          print("updated:", ymd(d), "rows:", len(items))
+          print("updated:", d.strftime('%Y-%m-%d'), "rows:", len(items))
           if pathlib.Path(path).exists():
             with open(path,"r",encoding="utf-8") as f:
               for i,line in zip(range(20),f): print(line.rstrip())
@@ -130,11 +130,19 @@ jobs:
       - name: Skip auto-approve (no AUTO_TOKEN)
         if: ${{ steps.cpr.outputs.pull-request-number && env.HAS_PAT == '' }}
         run: echo "::notice title=Auto-approve skipped::Set repo secret AUTO_TOKEN to enable auto-approve."
-      - name: Enable auto-merge
-        if: ${{ steps.cpr.outputs.pull-request-number }}
+
+      - name: Enable auto-merge (with AUTO_TOKEN)
+        if: ${{ steps.cpr.outputs.pull-request-number && env.HAS_PAT != '' }}
         uses: peter-evans/enable-pull-request-automerge@v3
         with:
           pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
           merge-method: squash
-          token: ${{ secrets.AUTO_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.AUTO_TOKEN }}
 
+      - name: Enable auto-merge (with GITHUB_TOKEN)
+        if: ${{ steps.cpr.outputs.pull-request-number && env.HAS_PAT == '' }}
+        uses: peter-evans/enable-pull-request-automerge@v3
+        with:
+          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+          merge-method: squash
+          token: ${{ secrets.GITHUB_TOKEN }}
