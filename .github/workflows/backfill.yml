@@ -1,0 +1,151 @@
+name: Backfill rates (RSS -> PR -> auto-merge)
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "Start date (YYYY-MM-DD)"
+        required: true
+        default: "2024-01-01"
+      end:
+        description: "End date (YYYY-MM-DD)"
+        required: true
+        default: "2024-12-31"
+      currencies:
+        description: "Comma-separated ISO (blank = all)"
+        required: false
+        default: "USD,EUR,RUB"
+
+concurrency:
+  group: rates-${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+
+      - name: Install deps
+        run: |
+          echo "requests==2.32.3" > requirements.txt
+          pip install -r requirements.txt
+
+      # >>>> НЕ МЕНЯЙ ЛОГИКУ СКАЧИВАНИЯ ЕСЛИ ОНА УЖЕ У ТЕБЯ РЕАЛИЗОВАНА.
+      # Ниже минимальная рабочая версия RSS-бэкфилла. Если в репозитории уже
+      # есть свои шаги backfill, сохрани их, главное — оставить "хвост" с PR как ниже.
+      - name: Fetch RSS & write data
+        run: |
+          python - << 'PY'
+          import os, csv, re, xml.etree.ElementTree as ET, datetime as dt, time, requests, json
+          UA={"User-Agent":"rk-rates-bot/1.0","Accept":"application/xml"}
+          BASE="https://nationalbank.kz/rss/get_rates.cfm?fdate={}"
+          def ddmmyyyy(d): return d.strftime("%d.%m.%Y")
+          def ymd(d): return d.strftime("%Y-%m-%d")
+          def prev_bd(d):
+            while d.weekday()>=5: d-=dt.timedelta(days=1)
+            return d
+          def fetch_day(d):
+            r=requests.get(BASE.format(ddmmyyyy(d)),headers=UA,timeout=20); r.raise_for_status()
+            root=ET.fromstring(r.content); out=[]
+            for item in root.findall(".//item"):
+              code=None
+              for tag in ("index","title","charcode","code"):
+                el=item.find(tag)
+                if el is not None and (el.text or "").strip():
+                  t=re.sub(r"[^A-Za-z]","",el.text).upper()
+                  if re.fullmatch(r"[A-Z]{3}",t): code=t; break
+              if not code or code=="KZT": continue
+              rate=None
+              for tag in ("description","value","target","current"):
+                el=item.find(tag)
+                if el is not None and (el.text or "").strip():
+                  s=el.text.replace("\xa0"," ").replace(" ","").replace(",",".")
+                  m=re.search(r"[-+]?\d+(?:\.\d+)?",s)
+                  if m: rate=float(m.group()); break
+              if rate is None:
+                s=" ".join([(item.find(t).text or "") for t in ("description","title","fullname") if item.find(t) is not None])
+                s=s.replace("\xa0"," ").replace(" ","").replace(",",".")
+                m=re.search(r"[-+]?\d+(?:\.\d+)?",s)
+                if m: rate=float(m.group())
+              if rate is None: continue
+              out.append({"date": ymd(d), "currency": code, "rate": round(rate,4)})
+            uniq={}
+            for it in out: uniq[(it["date"],it["currency"])]=it["rate"]
+            return [{"date":d,"currency":c,"rate":r} for (d,c),r in sorted(uniq.items())]
+          import sys
+          a=dt.datetime.strptime("${{ inputs.start }}","%Y-%m-%d").date()
+          b=dt.datetime.strptime("${{ inputs.end }}","%Y-%m-%d").date()
+          pick=set(x.strip().upper() for x in ("${{ inputs.currencies }}".split(",") if "${{ inputs.currencies }}".strip() else []) if x.strip())
+          if b<a: a,b=b,a
+          os.makedirs("data/daily",exist_ok=True)
+          total=0; cur=a
+          while cur<=b:
+            if cur.weekday()<5:
+              items=fetch_day(cur)
+              if not items:
+                alt=prev_bd(cur-dt.timedelta(days=1))
+                items=[{"date": ymd(cur), "currency": it["currency"], "rate": it["rate"]} for it in fetch_day(alt)]
+              if pick: items=[it for it in items if it["currency"] in pick]
+              if items:
+                # upsert year csv
+                path=f"data/{cur.year}.csv"; store={}
+                if os.path.exists(path):
+                  with open(path,"r",encoding="utf-8") as f:
+                    for r in csv.DictReader(f):
+                      store[(r["date"], (r["currency"] or "").upper())]=float(r["rate"])
+                for it in items:
+                  store[(it["date"], it["currency"].upper())]=float(it["rate"])
+                with open(path,"w",encoding="utf-8",newline="") as f:
+                  w=csv.writer(f); w.writerow(["date","currency","rate"])
+                  for (dd,cc),rr in sorted(store.items()):
+                    w.writerow([dd,cc,f"{rr:.4f}"])
+                with open(f"data/daily/{ymd(cur)}.json","w",encoding="utf-8") as f:
+                  json.dump(items,f,ensure_ascii=False,indent=2)
+                total+=len(items)
+                time.sleep(0.4)
+            cur+=dt.timedelta(days=1)
+          print("rows:", total)
+          PY
+
+      - name: Show head of 2024.csv
+        run: |
+          if [ -f data/2024.csv ]; then head -n 20 data/2024.csv; else echo "no data/2024.csv"; fi
+
+      # Публикация через постоянный PR bot/rates (без secrets в if:)
+      - name: Create/Update PR (static branch bot/rates)
+        id: cpr
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: bot/rates
+          title: "chore: backfill rates"
+          commit-message: "chore: backfill rates [skip ci]"
+          author: rates-bot <rates-bot@users.noreply.github.com>
+          signoff: false
+          delete-branch: false
+          labels: rates, auto-merge
+
+      - name: Auto approve PR (optional)
+        if: ${{ steps.cpr.outputs.pull-request-number }}
+        uses: hmarr/auto-approve-action@v4
+        with:
+          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+          github-token: ${{ secrets.AUTO_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge
+        if: ${{ steps.cpr.outputs.pull-request-number }}
+        uses: peter-evans/enable-pull-request-automerge@v3
+        with:
+          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+          merge-method: squash
+          token: ${{ secrets.AUTO_TOKEN || secrets.GITHUB_TOKEN }}
