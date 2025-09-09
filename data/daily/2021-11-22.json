@@ -1,0 +1,17 @@
+[
+  {
+    "date": "2021-11-22",
+    "currency": "EUR",
+    "rate": 486.39
+  },
+  {
+    "date": "2021-11-22",
+    "currency": "RUB",
+    "rate": 5.87
+  },
+  {
+    "date": "2021-11-22",
+    "currency": "USD",
+    "rate": 430.43
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "date": "2021-04-20",
+    "currency": "EUR",
+    "rate": 518.42
+  },
+  {
+    "date": "2021-04-20",
+    "currency": "RUB",
+    "rate": 5.66
+  },
+  {
+    "date": "2021-04-20",
+    "currency": "USD",
+    "rate": 430.69
+  }
+]
