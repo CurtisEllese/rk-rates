@@ -1,0 +1,242 @@
+[
+  {
+    "date": "2026-09-30",
+    "currency": "AED",
+    "rate": 119.63
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "AMD",
+    "rate": 12.15
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "AUD",
+    "rate": 307.52
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "AZN",
+    "rate": 259.22
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "BRL",
+    "rate": 84.12
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "BYN",
+    "rate": 145.97
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "CAD",
+    "rate": 309.57
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "CHF",
+    "rate": 527.39
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "CNY",
+    "rate": 65.55
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "CZK",
+    "rate": 20.44
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "DKK",
+    "rate": 66.71
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "EGP",
+    "rate": 8.44
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "EUR",
+    "rate": 498.6
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "GBP",
+    "rate": 581.51
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "GEL",
+    "rate": 171.09
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "HKD",
+    "rate": 56.0
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "HUF",
+    "rate": 13.6
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "IDR",
+    "rate": 24.46
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "ILS",
+    "rate": 143.59
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "INR",
+    "rate": 4.58
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "IRR",
+    "rate": 3.2
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "JPY",
+    "rate": 2.79
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "KGS",
+    "rate": 5.02
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "KRW",
+    "rate": 32.43
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "KWD",
+    "rate": 1428.15
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "MDL",
+    "rate": 24.96
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "MNT",
+    "rate": 12.22
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "MXN",
+    "rate": 24.52
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "MYR",
+    "rate": 107.77
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "NOK",
+    "rate": 45.81
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "OMR",
+    "rate": 1141.28
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "PKR",
+    "rate": 1.59
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "PLN",
+    "rate": 114.21
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "QAR",
+    "rate": 120.55
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "RON",
+    "rate": 94.52
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "RUB",
+    "rate": 5.22
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "SAR",
+    "rate": 117.02
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "SEK",
+    "rate": 44.05
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "SGD",
+    "rate": 343.85
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "THB",
+    "rate": 13.11
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "TJS",
+    "rate": 47.97
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "TRY",
+    "rate": 8.97
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "UAH",
+    "rate": 9.8
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "USD",
+    "rate": 439.37
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "UZS",
+    "rate": 3.72
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "VND",
+    "rate": 16.92
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "XDR",
+    "rate": 597.47
+  },
+  {
+    "date": "2026-09-30",
+    "currency": "ZAR",
+    "rate": 26.83
+  }
+]
